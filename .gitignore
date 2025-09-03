@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+.cache/
+*.log
+*.egg-info/
+
+# Virtual env
+venv/
+lawmate-env/
+.env
+
+# Streamlit
+.cache/
+.streamlit/
+
+# OS
+.DS_Store
+
+# Exports
+*.pdf
+*.txt
