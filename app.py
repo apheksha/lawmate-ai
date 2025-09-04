@@ -18,6 +18,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import bleach
+import secrets
+
 
 try:
     from weasyprint import HTML
@@ -966,17 +968,16 @@ if batch_upload:
     for r in results:
         if r.get("file_hash"):
             key = r["file_hash"]
-            jname = f"ocr_{key[:8]}_{int(time.time())}.json"
             payload = {"meta": {"user": st.session_state.user['username'], "ts": now_utc().isoformat()},
-                       "file_name": r["file_name"], "file_hash": r["file_hash"], "preview": r["text_preview"]}
-            with open(jname, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            with open(jname, "rb") as f:
-                st.download_button(f"Download OCR JSON: {r['file_name']}", f, file_name=jname, mime="application/json")
-            try:
-                os.remove(jname)
-            except Exception:
-                pass
+           "file_name": r["file_name"], "file_hash": r["file_hash"], "preview": r["text_preview"]}
+            payload_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+            st.download_button(
+                label=f"Download OCR JSON: {r['file_name']}",
+                data=payload_bytes,
+                file_name=f"ocr_{r['file_hash'][:8]}_{int(time.time())}.json",
+                mime="application/json"
+                )
+
     log_event("batch_ocr_completed", user=st.session_state.user['username'], count=len(results))
 
 # Load prior file_data if present
@@ -1013,7 +1014,7 @@ if uploaded:
     st.session_state.pop("last_result", None)
     refresh_session_time()
     log_event("file_uploaded", user=st.session_state.user['username'], file=file_name)
-    st.rerun()
+    
 
 # sample selection
 if sample != "None" and not uploaded and 'file_data' not in st.session_state:
@@ -1028,7 +1029,7 @@ if sample != "None" and not uploaded and 'file_data' not in st.session_state:
         file_name = os.path.basename(sample_path)
         st.session_state.file_data = {"text": text, "file_name": file_name, "bytes_hash": file_hash_bytes(raw)}
         st.session_state.pop("last_result", None)
-        st.rerun()
+        
     else:
         st.warning("No sample files present; upload a file to test.")
 
@@ -1252,19 +1253,16 @@ if st.session_state.get("last_result"):
                 st.error(f"DOCX export failed: {e}")
     with c3:
         if st.button("Download JSON"):
-            jname = f"analysis_{int(time.time())}.json"
             payload = {"meta": {"user": st.session_state.user['username'], "ts": now_utc().isoformat()},
-                       "question": res["question"], "answer": res["answer"], "risk_info": res["risk_info"]}
-            try:
-                with open(jname, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=2)
-                with open(jname, "rb") as f:
-                    st.download_button("Download JSON", f, file_name=jname, mime="application/json")
-            finally:
-                try:
-                    os.remove(jname)
-                except Exception:
-                    pass
+           "file_name": r["file_name"], "file_hash": r["file_hash"], "preview": r["text_preview"]}
+            payload_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+            st.download_button(
+                label=f"Download OCR JSON: {r['file_name']}",
+                data=payload_bytes,
+                file_name=f"ocr_{r['file_hash'][:8]}_{int(time.time())}.json",
+                mime="application/json"
+                )
+
             log_event("export_json", user=st.session_state.user['username'])
     with c4:
         if st.button("🔊 Read Aloud"):
