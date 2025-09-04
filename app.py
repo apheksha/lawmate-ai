@@ -69,10 +69,13 @@ except Exception:
 # Transformers 
 try:
     from transformers import pipeline
+    import torch
     _HAS_TRANSFORMERS = True
 except Exception:
     pipeline = None
+    torch = None
     _HAS_TRANSFORMERS = False
+HF_MODEL = os.getenv("HF_MODEL", "distilbert/distilbert-base-cased-distilled-squad")
 
 # langdetect optional (auto language detection)
 try:
@@ -173,7 +176,7 @@ Index("ix_qacache_question", QACache.question)
 Index("ix_contract_file_name", Contract.file_name)
 Index("ix_ocrcache_hash", OCRCache.file_hash)
 
-Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=engine, checkfirst=True)
 
 # ---------- Compatibility shim ----------
 if not hasattr(st, "rerun"):
@@ -255,6 +258,21 @@ def hash_password(password: str) -> str:
             pass
     # fallback bcrypt
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode()
+def password_valid_policy(password: str) -> tuple[bool, str]:
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters."
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain an uppercase letter."
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain a lowercase letter."
+    if not re.search(r"\d", password):
+        return False, "Password must contain a digit."
+    return True, "OK"
+
+def regenerate_session_token():
+    token = secrets.token_hex(32)
+    st.session_state.session_token = token
+    return token
 
 def verify_password(password: str, hashed: str) -> bool:
     if _HAS_ARGON2 and _argon_hasher:
@@ -476,13 +494,15 @@ def highlight_text_with_risks(text: str) -> str:
 # ---------- Model loading & fallback ----------
 @st.cache_resource(show_spinner=False)
 def load_qa_pipeline(model_name=HF_MODEL):
-    if not _HAS_TRANSFORMERS:
+    """Load QA or text2text pipeline safely, with fallback."""
+    if not _HAS_TRANSFORMERS or pipeline is None:
         return None
     try:
-        return pipeline("question-answering")
+        device = 0 if torch and torch.cuda.is_available() else -1
+        return pipeline("question-answering", model=model_name, device=device)
     except Exception:
         try:
-            return pipeline("text2text-generation", model=model_name)
+            return pipeline("text2text-generation", model=model_name, device=device)
         except Exception as e:
             log_event("hf_model_load_failed", error=str(e))
             return None
@@ -525,7 +545,7 @@ def query_model_with_chunking(text: str, question: str) -> str:
                 best = {"score": -1, "answer": ""}
                 for chunk in chunk_text(ctx, max_chars=1500):
                     try:
-                        out = qa_pipeline(question=question, context=chunk)
+                        out = qa_pipeline(question=question, context=chunk, clean_up_tokenization_spaces=True)
                         sc = float(out.get("score", 0))
                         if sc > best["score"]:
                             best = {"score": sc, "answer": out.get("answer", "")}
