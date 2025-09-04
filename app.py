@@ -1,4 +1,3 @@
-# app.py — LawMate AI (single-file, production-ready with many free improvements)
 import os
 import io
 import re
@@ -15,13 +14,11 @@ import difflib
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import bleach
 
-# Try to import WeasyPrint; fallback to reportlab for simple PDF generation if needed
 try:
     from weasyprint import HTML
     _HAS_WEASY = True
@@ -39,10 +36,10 @@ except Exception:
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Index, delete as sa_delete
 )
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
-# Password hashing: prefer argon2 if available, fallback to bcrypt
+# Password hashing
 try:
     from argon2 import PasswordHasher
     from argon2.exceptions import VerifyMismatchError
@@ -69,7 +66,7 @@ try:
 except Exception:
     _HAS_PDF2IMAGE = False
 
-# Transformers (optional)
+# Transformers 
 try:
     from transformers import pipeline
     _HAS_TRANSFORMERS = True
@@ -249,7 +246,7 @@ def save_cache(cache: Dict[str, Any], path: pathlib.Path = CACHE_PATH):
 if 'cache' not in st.session_state:
     st.session_state.cache = load_cache()
 
-# ---------- Password hashing (argon2 preferred, bcrypt fallback) ----------
+# ---------- Password hashing----------
 def hash_password(password: str) -> str:
     if _HAS_ARGON2 and _argon_hasher:
         try:
@@ -265,7 +262,6 @@ def verify_password(password: str, hashed: str) -> bool:
             _argon_hasher.verify(hashed, password)
             return True
         except Exception:
-            # fallback to bcrypt check if argon2 verify fails
             try:
                 return bcrypt.checkpw(password.encode("utf-8"), hashed.encode())
             except Exception:
@@ -322,7 +318,7 @@ def ocr_images_parallel(images, lang="eng", max_workers: int = 4):
     return "\n".join(text_pages)
 
 def extract_pdf_text(file_stream: io.BytesIO, lang: str = "eng") -> str:
-    # Try PyPDF2 text extraction first
+    # Try PyPDF2 text extraction 
     try:
         from PyPDF2 import PdfReader
         file_stream.seek(0)
@@ -692,7 +688,7 @@ def export_docx(answer_text: str, risk_info: List[Dict[str,Any]], username: str 
 
 # ---------- UI ----------
 st.set_page_config(page_title="LawMate AI", layout="wide")
-st.title("⚖️ LawMate AI — Production-ready Single-file")
+st.title("⚖️ LawMate AI")
 
 # session init
 if 'user' not in st.session_state:
@@ -871,7 +867,6 @@ if st.session_state.get("show_diagnostics_page"):
     st.subheader("Model quick check")
     if qa_pipeline:
         try:
-            # don't run heavy inference; just report pipeline object
             st.write(str(qa_pipeline))
             st.success("QA pipeline available")
         except Exception as e:
@@ -883,7 +878,6 @@ if st.session_state.get("show_diagnostics_page"):
     try:
         sample_text = "Sample 123 ABC"
         if _HAS_PYTESSERACT:
-            # create a tiny image? skip actual image generation to keep dependencies light
             st.write("pytesseract available")
         else:
             st.warning("pytesseract not available")
@@ -1344,7 +1338,3 @@ with SessionLocal() as db:
                         st.sidebar.error("Delete failed")
                         log_event("contract_delete_failed", user=st.session_state.user['username'], error=str(e))
                     st.rerun()
-
-# ---------- Footer ----------
-st.markdown("---")
-st.caption("Built for demo/educational use. For real production, use HTTPS, a managed DB, separate model service, email delivery for password resets, and secure session storage.")
