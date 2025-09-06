@@ -19,6 +19,10 @@ import pandas as pd
 import plotly.express as px
 import bleach
 import secrets
+from law_embeddings import LawDatabase
+
+if "law_db" not in st.session_state:
+    st.session_state.law_db = LawDatabase()
 
 
 try:
@@ -67,7 +71,7 @@ try:
     _HAS_PDF2IMAGE = True
 except Exception:
     _HAS_PDF2IMAGE = False
-
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Transformers 
 try:
     from transformers import pipeline
@@ -1122,19 +1126,35 @@ if st.session_state.get("processing") == "analyze":
             # query model
             answer = query_model_with_chunking(text, question)
             answer_translated = translate_text(answer, dest=out_lang)
+            # 🔹 Find relevant laws from your datasets
+            relevant_laws = st.session_state.law_db.query_laws(
+                question + " " + text[:1000],
+                top_k=3
+                )
+
             # extract clauses
             clauses = [s.strip() for s in re.split(r'\n{1,}|(?<=[.?!])\s+', answer_translated) if s.strip()][:100]
             risk_info = []
             for cl in clauses:
                 r = compute_risk(cl)
-                risk_info.append({"clause": cl, "level": r["level"], "score": r["score"], "reasons": r["reasons"]})
+                law_refs = st.session_state.law_db.query_laws(cl, top_k=1)
+                law_ref = law_refs[0] if law_refs else None
+                risk_info.append({"clause": cl, "level": r["level"], "score": r["score"], "reasons": r["reasons"],"law_ref": r.get("law_ref")})
             # save QA entry
             with SessionLocal() as db:
                 qa = QACache(contract_id=contract_id, question=question, answer=answer_translated, risk_info=json.dumps(risk_info))
                 db.add(qa)
                 db.commit()
                 qa_id = qa.id
-            st.session_state.last_result = {"answer": answer_translated, "risk_info": risk_info, "contract_id": contract_id, "question": question, "qa_id": qa_id}
+            st.session_state.last_result = {
+                 "answer": answer_translated,
+                 "risk_info": risk_info,
+                 "contract_id": contract_id,
+                 "question": question,
+                 "qa_id": qa_id,
+                 "relevant_laws": relevant_laws  
+                 }
+
             log_event("analysis_run", user=st.session_state.user['username'], contract_id=contract_id, qa_id=qa_id)
             st.success("Analysis complete.")
         except Exception as e:
@@ -1184,6 +1204,15 @@ if st.session_state.get("last_result"):
     st.markdown("**Answer:**")
     st.write(res["answer"])
     st.markdown("**Clause-level Risk Analysis**")
+    # Show relevant laws
+    if st.session_state.last_result.get("relevant_laws"):
+        st.subheader("Relevant Laws / References")
+        for law in st.session_state.last_result["relevant_laws"]:
+            if law["type"] == "qa":
+                st.markdown(f"**QA:** {law['question']} → {law['answer']}")
+            elif law["type"] == "ref":
+                st.markdown(f"**Law:** [{law['title']}]({law['url']})")
+
 
     df_rows = []
     for i, r in enumerate(res["risk_info"]):
@@ -1205,6 +1234,14 @@ if st.session_state.get("last_result"):
                 st.write("Reasons:")
                 for reason in r['reasons']:
                     st.write("- " + reason)
+                    if r.get("law_ref"):
+                        law = r["law_ref"]
+                        st.write("⚖️ Related Law:")
+                        if law["type"] == "ref":
+                            st.markdown(f"- [{law['title']}]({law['url']})")
+                        elif law["type"] == "qa":
+                            st.markdown(f"- QA: {law['question']} → {law['answer']}")
+
 
     if not df_risk.empty:
         risk_map = {"Low": 0, "Medium": 1, "High": 2}
