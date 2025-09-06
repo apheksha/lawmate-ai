@@ -20,10 +20,12 @@ import plotly.express as px
 import bleach
 import secrets
 from law_embeddings import LawDatabase
-
-if "law_db" not in st.session_state:
-    st.session_state.law_db = LawDatabase()
-
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+import torch
+import html
+import random
+from fpdf import FPDF
+from docx import Document
 
 try:
     from weasyprint import HTML
@@ -40,7 +42,7 @@ except Exception:
 
 # SQLAlchemy
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Index, delete as sa_delete
+    create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Index,Float, Boolean, delete as sa_delete
 )
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -81,7 +83,7 @@ except Exception:
     pipeline = None
     torch = None
     _HAS_TRANSFORMERS = False
-HF_MODEL = os.getenv("HF_MODEL", "distilbert/distilbert-base-cased-distilled-squad")
+
 
 # langdetect optional (auto language detection)
 try:
@@ -106,7 +108,7 @@ try:
 except Exception:
     DocxDocument = None
     _HAS_DOCX = False
-
+st.set_page_config(page_title="LawMate AI", layout="wide")
 # ---------- CONFIG ----------
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///lawmate.db")
 CACHE_PATH = pathlib.Path(os.getenv("CACHE_FILE", "lawmate_cache.json"))
@@ -460,15 +462,16 @@ def compute_risk(clause: str) -> Dict[str, Any]:
     reasons = []
     ctext = clause.lower()
     for pattern, label, weight in RISK_PATTERNS:
-        m = re.search(pattern, ctext)
-        if m:
-            window = ctext[max(0, m.start()-30):m.start()]
-            neg = any(n in window for n in NEGATION_WORDS)
+        for m in re.finditer(pattern, ctext):
+            start = max(0, m.start()-60)
+            end = min(len(ctext), m.end()+20)
+            window = ctext[start:end]
+            neg = any(re.search(rf"\b{re.escape(n)}\b", window) for n in NEGATION_WORDS)
             if neg:
-                reasons.append(f"Found '{m.group()}' but negated in context.")
+                reasons.append(f"Found '{m.group(0)}' but negated in context.")
                 score -= weight
             else:
-                reasons.append(f"Matched '{m.group()}' -> {label}")
+                reasons.append(f"Matched '{m.group(0)}' -> {label}")
                 score += weight
     if score >= 3:
         level = "High"
@@ -495,6 +498,28 @@ def highlight_text_with_risks(text: str) -> str:
         color = {"High": "#ff4b4b", "Medium": "#ffb04b", "Low": "#7bd389"}.get(label, "#ffd")
         pattern = re.compile(re.escape(kw), flags=re.IGNORECASE)
         html = pattern.sub(lambda m: f"<span style='background:{color};padding:0 2px;border-radius:3px'>{m.group(0)}</span>", html)
+    return html
+def highlight_search_term(text: str, search_term: str) -> str:
+    """Highlight search terms safely before risk highlighting."""
+    if not search_term:
+        return text
+    # Regex only on plain text
+    return re.sub(
+        re.escape(search_term),
+        lambda m: f"<<HIGHLIGHT>>{m.group(0)}<</HIGHLIGHT>>",
+        text,
+        flags=re.IGNORECASE
+    )
+
+def render_preview_with_highlights(text: str, search_term: str) -> str:
+    # Step 1: highlight search term on plain text
+    marked_text = highlight_search_term(text, search_term)
+
+    # Step 2: run your risk highlighter
+    html = highlight_text_with_risks(marked_text)
+
+    # Step 3: replace placeholders with safe <mark> tags
+    html = html.replace("<<HIGHLIGHT>>", "<mark>").replace("<</HIGHLIGHT>>", "</mark>")
     return html
 
 # ---------- Model loading & fallback ----------
@@ -712,15 +737,49 @@ def export_docx(answer_text: str, risk_info: List[Dict[str,Any]], username: str 
         log_event("docx_failed", error=str(e))
         return None
 
-# ---------- UI ----------
-st.set_page_config(page_title="LawMate AI", layout="wide")
-st.title("⚖️ LawMate AI")
-
-# session init
+# ---------- Session State ----------
+if "law_db" not in st.session_state:
+    st.session_state.law_db = LawDatabase()
 if 'user' not in st.session_state:
     st.session_state.user = None
 if 'session_token' not in st.session_state:
     st.session_state.session_token = None
+
+# ---------- Sidebar Mode ----------
+with st.sidebar:
+    mode = st.radio("Mode", ["Normal", "Law Chatbot"])
+st.session_state.mode = mode
+
+# ---------- Law Chatbot UI ----------
+if st.session_state.mode == "Law Chatbot":
+    st.header("⚖️ Law Chatbot")
+    query = st.text_input("Ask a legal question (Constitution / CrPC ):")
+    
+    if query:
+        with st.spinner("Searching law database..."):
+            try:
+                safe_query = html.escape(query)
+                results = st.session_state.law_db.query_laws(safe_query, top_k=3)
+
+                if not results:
+                    st.info("No results found.")
+                else:
+                    for r in results:
+                        if r["type"] == "qa":
+                            st.markdown(f"**Q:** {r['question']}")
+                            st.markdown(f"**A:** {r['answer']}")
+                            st.caption(f"Score: {r['score']:.2f}")
+                        elif r["type"] == "ref":
+                            st.markdown(f"**Reference:** [{r['title']}]({r['url']})")
+                            st.caption(f"Score: {r['score']:.2f}")
+
+            except Exception as e:
+                st.error(f"Law Chatbot error: {e}")
+
+# ---------- Normal UI ----------
+if st.session_state.mode == "Normal":
+    st.title("⚖️ LawMate AI")
+    st.write("Welcome! Switch to 'Law Chatbot' from the sidebar to ask legal questions.")
 
 # Sidebar: auth & settings + diagnostics + admin page toggle
 with st.sidebar:
@@ -768,7 +827,7 @@ with st.sidebar:
             if st.session_state.get("reset_user") == rs_user and st.session_state.get("reset_question"):
                 st.write("Security question:")
                 st.write(st.session_state.reset_question)
-                rs_answer = st.text_input("Answer", key="rs_ans")
+                rs_answer = st.text_input("Answer", type="password",key="rs_ans")
                 new_pw = st.text_input("New password", type="password", key="rs_newpw")
                 if st.button("Reset password now"):
                     with SessionLocal() as db:
@@ -809,7 +868,7 @@ with st.sidebar:
                             dbu.locked_until = None
                             db.commit()
                             refresh_session_time()
-                            log_event("login_success", user=li_user, session=st.session_state.session_token)
+                            log_event("login_success", user=li_user, session_id=st.session_state.session_token[:8])
                             st.success(f"Welcome, {dbu.username}!")
                             st.rerun()
                         else:
@@ -1045,15 +1104,30 @@ if not text:
 st.markdown("---")
 st.markdown("### Document preview (first 10k chars) — risky terms highlighted")
 MAX_PREVIEW_CHARS = 10000
-preview_html = highlight_text_with_risks(text[:MAX_PREVIEW_CHARS])
-st.markdown(preview_html, unsafe_allow_html=True)
+preview_text = text[:MAX_PREVIEW_CHARS] 
+search_term = st.text_input("Search inside document (preview highlights):")
+try:
+    preview_html = render_preview_with_highlights(preview_text, search_term or "")
+    st.markdown(preview_html, unsafe_allow_html=True)
+except Exception as e:
+    st.error("Preview rendering failed: " + str(e))
+
 
 # Quick search in document
-search_term = st.text_input("Search inside document (preview highlights):")
+
 if search_term:
-    highlighted = re.sub(re.escape(search_term), lambda m: f"<mark>{m.group(0)}</mark>", preview_html, flags=re.IGNORECASE)
-    st.markdown("### Search results (preview)")
-    st.markdown(highlighted, unsafe_allow_html=True)
+    try:
+        highlighted_html = re.sub(
+            re.escape(search_term),
+            lambda m: f"<mark>{m.group(0)}</mark>",
+            preview_html,
+            flags=re.IGNORECASE
+        )
+        st.markdown("### Search results (preview)")
+        st.markdown(highlighted_html, unsafe_allow_html=True)
+    except Exception as e:
+        st.error("Search highlighting failed: " + str(e))
+
 
 # Q/A inputs
 question = st.text_input("Ask a short, specific question about this contract:")
@@ -1139,7 +1213,7 @@ if st.session_state.get("processing") == "analyze":
                 r = compute_risk(cl)
                 law_refs = st.session_state.law_db.query_laws(cl, top_k=1)
                 law_ref = law_refs[0] if law_refs else None
-                risk_info.append({"clause": cl, "level": r["level"], "score": r["score"], "reasons": r["reasons"],"law_ref": r.get("law_ref")})
+                risk_info.append({"clause": cl, "level": r["level"], "score": r["score"], "reasons": r["reasons"],"law_ref": law_ref})
             # save QA entry
             with SessionLocal() as db:
                 qa = QACache(contract_id=contract_id, question=question, answer=answer_translated, risk_info=json.dumps(risk_info))
@@ -1290,17 +1364,21 @@ if st.session_state.get("last_result"):
                 st.error(f"DOCX export failed: {e}")
     with c3:
         if st.button("Download JSON"):
-            payload = {"meta": {"user": st.session_state.user['username'], "ts": now_utc().isoformat()},
-           "file_name": r["file_name"], "file_hash": r["file_hash"], "preview": r["text_preview"]}
+            payload = {
+                "meta": {"user": st.session_state.user['username'], "ts": now_utc().isoformat()},
+                "file_name": res.get("file_name", "unknown"),
+                "file_hash": res.get("file_hash", "na"),
+                "preview": res.get("answer", "")[:200]
+                }
             payload_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
             st.download_button(
-                label=f"Download OCR JSON: {r['file_name']}",
+                label=f"Download OCR JSON: {payload['file_name']}",
                 data=payload_bytes,
-                file_name=f"ocr_{r['file_hash'][:8]}_{int(time.time())}.json",
+                file_name=f"ocr_{payload['file_hash'][:8]}_{int(time.time())}.json",
                 mime="application/json"
                 )
-
             log_event("export_json", user=st.session_state.user['username'])
+
     with c4:
         if st.button("🔊 Read Aloud"):
             try:
