@@ -101,7 +101,7 @@ except Exception:
     GoogleTranslator = None
     _HAS_GOOGLETRANS = False
 
-# python-docx optional (DOCX export)
+# python-docx
 try:
     from docx import Document as DocxDocument
     _HAS_DOCX = True
