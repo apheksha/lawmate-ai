@@ -344,7 +344,7 @@ def ocr_images_parallel(images, lang="eng", max_workers: int = 4):
     return "\n".join(text_pages)
 
 def extract_pdf_text(file_stream: io.BytesIO, lang: str = "eng") -> str:
-    # Try PyPDF2 text extraction 
+   
     try:
         from PyPDF2 import PdfReader
         file_stream.seek(0)
