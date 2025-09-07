@@ -85,7 +85,7 @@ except Exception:
     _HAS_TRANSFORMERS = False
 
 
-# langdetect optional (auto language detection)
+# langdetect (auto language detection)
 try:
     from langdetect import detect as langdetect_detect
     _HAS_LANGDETECT = True
