@@ -20,7 +20,7 @@ import plotly.express as px
 import bleach
 import secrets
 from law_embeddings import LawDatabase
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 import html
 import random
@@ -1168,6 +1168,7 @@ st.sidebar.write(f"Q&As: **{total_qas}**")
 if avg_risk_score is not None:
     st.sidebar.write(f"Avg risk (0 low — 2 high): **{avg_risk_score:.2f}**")
 st.sidebar.markdown("---")
+search_q = st.sidebar.text_input("Search Q&A")
 
 # handle analyze/summary
 if analyze:
@@ -1463,6 +1464,7 @@ with SessionLocal() as db:
                 if st.sidebar.button(f"Confirm delete {c.id}", key=f"confirm_del_{c.id}"):
                     try:
                         with SessionLocal() as db_del:
+                            db_del.execute(sa_delete(QACache).where(QACache.contract_id == c.id))
                             db_del.execute(sa_delete(Contract).where(Contract.id == c.id))
                             db_del.commit()
                         st.sidebar.success("Deleted")
