@@ -33,7 +33,7 @@ LawMate AI is a Streamlit-based application for **contract analysis and risk ass
 
 ### Exports & Actions
 - Download analysis results as:
-  - **PDF** (weasyprint or reportlab)
+  - **PDF**
   - **DOCX**
   - **JSON**
 - Text-to-speech for reading the answer aloud.
