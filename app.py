@@ -85,7 +85,7 @@ except Exception:
     _HAS_TRANSFORMERS = False
 
 
-# langdetect optional (auto language detection)
+# langdetect (auto language detection)
 try:
     from langdetect import detect as langdetect_detect
     _HAS_LANGDETECT = True
@@ -101,7 +101,7 @@ except Exception:
     GoogleTranslator = None
     _HAS_GOOGLETRANS = False
 
-# python-docx optional (DOCX export)
+# python-docx
 try:
     from docx import Document as DocxDocument
     _HAS_DOCX = True
@@ -344,7 +344,7 @@ def ocr_images_parallel(images, lang="eng", max_workers: int = 4):
     return "\n".join(text_pages)
 
 def extract_pdf_text(file_stream: io.BytesIO, lang: str = "eng") -> str:
-    # Try PyPDF2 text extraction 
+   
     try:
         from PyPDF2 import PdfReader
         file_stream.seek(0)
