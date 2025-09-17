@@ -121,7 +121,7 @@ SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "45"))
 LOGIN_RATE_LIMIT = int(os.getenv("LOGIN_RATE_LIMIT", "5"))
 LOGIN_LOCK_MIN = int(os.getenv("LOGIN_LOCK_MIN", "10"))
 
-# Logging (structured JSON logs)
+# Logging 
 LOG_FILE = os.getenv("LOG_FILE", "lawmate_events.log")
 logger = logging.getLogger("lawmate")
 logger.setLevel(logging.INFO)
@@ -177,7 +177,7 @@ class OCRCache(Base):
     lang = Column(String, nullable=True)
     text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    # optional: link to contract if desired later
+    
     contract_id = Column(Integer, ForeignKey("contracts.id"), nullable=True)
 
 Index("ix_qacache_question", QACache.question)
@@ -195,7 +195,6 @@ if not hasattr(st, "rerun"):
             raise RuntimeError("Streamlit rerun not available.")
         st.rerun = _no_rerun
 
-# ---------- Helpers ----------
 def now_utc() -> datetime:
     return datetime.utcnow()
 
@@ -221,7 +220,7 @@ def generate_hash(text: str, question: str) -> str:
     h.update(question.encode("utf-8", errors="ignore"))
     return h.hexdigest()
 
-# ---------- Session helpers ----------
+
 def refresh_session_time():
     st.session_state["last_activity"] = now_utc().isoformat()
 
@@ -235,7 +234,7 @@ def is_session_expired() -> bool:
         return False
     return (now_utc() - last_dt).total_seconds() > SESSION_TIMEOUT_MIN * 60
 
-# ---------- Cache (JSON) ----------
+# ---------- Cache  ----------
 def load_cache(path: pathlib.Path = CACHE_PATH) -> Dict[str, Any]:
     if path.exists():
         try:
@@ -305,7 +304,7 @@ def hash_answer(answer: str) -> str:
 def verify_answer(ans_plain: str, ans_hash: str) -> bool:
     return verify_password(ans_plain.strip().lower(), ans_hash)
 
-# ---------- OCR helpers (with DB-persistent cache + parallel) ----------
+# ---------- OCR helpers  ----------
 LANG_CODE_MAP = {"English": "eng", "Hindi": "hin", "French": "fra"}
 
 def tesseract_languages_available() -> List[str]:
@@ -388,7 +387,6 @@ def extract_txt(file_bytes: bytes) -> str:
     except Exception:
         return file_bytes.decode("latin-1", errors="ignore")
 
-# DB-backed OCR cache: checks DB first, then session cache, then runs OCR and saves to DB
 def ocr_cached(file_bytes: bytes, lang_code: str = "eng", persist_to_db: bool = True) -> str:
     file_h = file_hash_bytes(file_bytes + lang_code.encode())
     # check in-memory session cache
@@ -512,13 +510,13 @@ def highlight_search_term(text: str, search_term: str) -> str:
     )
 
 def render_preview_with_highlights(text: str, search_term: str) -> str:
-    # Step 1: highlight search term on plain text
+    
     marked_text = highlight_search_term(text, search_term)
 
-    # Step 2: run your risk highlighter
+    
     html = highlight_text_with_risks(marked_text)
 
-    # Step 3: replace placeholders with safe <mark> tags
+    
     html = html.replace("<<HIGHLIGHT>>", "<mark>").replace("<</HIGHLIGHT>>", "</mark>")
     return html
 
@@ -914,12 +912,12 @@ with st.sidebar:
     if st.button("Open full Diagnostics page"):
         st.session_state.show_diagnostics_page = True
 
-# If not logged in, stop main
+
 if st.session_state.user is None:
     st.info("Log in or sign up to begin analyzing contracts.")
     st.stop()
 
-# ---------- Diagnostics page (standalone) ----------
+
 if st.session_state.get("show_diagnostics_page"):
     st.markdown("# Diagnostics")
     st.write("This page runs a series of checks and displays results below.")
