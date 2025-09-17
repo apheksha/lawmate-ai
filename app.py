@@ -85,7 +85,7 @@ except Exception:
     _HAS_TRANSFORMERS = False
 
 
-# langdetect (auto language detection)
+# langdetect 
 try:
     from langdetect import detect as langdetect_detect
     _HAS_LANGDETECT = True
@@ -93,7 +93,7 @@ except Exception:
     langdetect_detect = None
     _HAS_LANGDETECT = False
 
-# googletrans optional fallback for translations
+# googletrans 
 try:
     from googletrans import Translator as GoogleTranslator
     _HAS_GOOGLETRANS = True
