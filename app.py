@@ -186,7 +186,7 @@ Index("ix_ocrcache_hash", OCRCache.file_hash)
 
 Base.metadata.create_all(bind=engine, checkfirst=True)
 
-# ---------- Compatibility shim ----------
+
 if not hasattr(st, "rerun"):
     if hasattr(st, "experimental_rerun"):
         st.rerun = st.experimental_rerun
@@ -311,10 +311,10 @@ def tesseract_languages_available() -> List[str]:
     if not _HAS_PYTESSERACT:
         return []
     try:
-        return pytesseract.get_languages(config='')  # type: ignore
+        return pytesseract.get_languages(config='')  
     except Exception:
         try:
-            return pytesseract.get_languages()  # type: ignore
+            return pytesseract.get_languages()  
         except Exception:
             return []
 
@@ -1199,7 +1199,7 @@ if st.session_state.get("processing") == "analyze":
             # query model
             answer = query_model_with_chunking(text, question)
             answer_translated = translate_text(answer, dest=out_lang)
-            # 🔹 Find relevant laws from your datasets
+            #  Find relevant laws from your datasets
             relevant_laws = st.session_state.law_db.query_laws(
                 question + " " + text[:1000],
                 top_k=3
